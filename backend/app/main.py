@@ -1,10 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from .database import engine, Base
 from .vision.detector import process_video
 from .reports.generator import generate_incident_report
-import uuid, os, shutil
+import uuid, os, shutil, csv, io
 
 Base.metadata.create_all(bind=engine)
 
@@ -65,6 +65,21 @@ def get_events():
         if "events" in video_data:
             all_events.extend(video_data["events"])
     return {"events": all_events, "total": len(all_events)}
+
+@app.get("/api/v1/reports/events/export")
+def export_csv():
+    all_events = []
+    for video_data in results_store.values():
+        if "events" in video_data:
+            all_events.extend(video_data["events"])
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["event_id","video_id","event_type","severity","threat_score","frame_index","person_count"])
+    writer.writeheader()
+    writer.writerows(all_events)
+    output.seek(0)
+    return StreamingResponse(io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=events.csv"})
 
 @app.get("/api/v1/reports/incident/{video_id}")
 def download_report(video_id: str):
